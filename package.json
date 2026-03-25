@@ -1,0 +1,43 @@
+{
+  "name": "picgo-plugin-s3-uploader",
+  "version": "1.0.0",
+  "description": "S3-compatible PicGo uploader that emits imgproxy-friendly source metadata.",
+  "homepage":"https://github.com/eyunzhu/picgo-plugin-s3-uploader",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eyunzhu/picgo-plugin-s3-uploader.git"
+  },
+  "main": "index.js",
+  "type": "commonjs",
+  "author": "eyunzhu",
+  "license": "MIT",
+  "keywords": [
+    "picgo",
+    "picgo-core",
+    "picgo-gui-plugin",
+    "picgo-plugin",
+    "piclist",
+    "s3",
+    "aws",
+    "garage",
+    "minio",
+    "imgproxy"
+  ],
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
+}
