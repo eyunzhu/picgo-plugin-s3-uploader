@@ -1,8 +1,8 @@
 # picgo-plugin-s3-uploader
 
-> 一个面向 AWS S3、Garage、MinIO 等 S3 兼容对象存储的 PicGo 插件，支持图片删除、输出imgproxy等插件使用的数据字段
+> 一个面向 AWS S3、Garage、MinIO 等 S3 兼容对象存储的 PicGo 插件，支持文件上传、删除，以及输出 imgproxy 等插件使用的数据字段
 
-它负责把图片上传到 S3 兼容服务，并输出：
+它负责把文件上传到 S3 兼容服务，并输出：
 
 - 正常可访问的 `url` / `imgUrl`
 - 供 `picgo-plugin-imgproxy` 使用的稳定 `imgproxySource`
@@ -10,9 +10,11 @@
 ## 功能概览
 
 - 支持 AWS S3 / Garage / MinIO 等 S3 兼容服务
-- 支持 PicGo GUI 删除图片时同步执行 S3 `DELETE Object`
+- 支持 PicGo GUI 删除文件时同步执行 S3 `DELETE Object`
 - 支持 `uploadPath` 上传路径模板
 - 支持 `outputURLPattern` 自定义输出 URL 模板
+- 常见图片、视频、音频、文档、压缩包、网页资源类型会自动写入合适的 `Content-Type`
+- 可选写入 `Content-Disposition: inline`，让浏览器更倾向于直接预览
 - 内置中英文文案，并优先跟随 PicGo / PicList 当前语言设置
 
 ## 安装
@@ -42,6 +44,7 @@ picgo install picgo-plugin-s3-uploader
 | `pathStyleAccess` | 是否使用 path-style 请求。Garage / MinIO 常见为 `true`。 | `true` |
 | `rejectUnauthorized` | 是否拒绝无效 TLS 证书。 | `true` |
 | `acl` | 对象 ACL；若服务不支持可留空。 | `public-read` |
+| `contentDispositionInline` | 是否在上传时写入 `Content-Disposition: inline`。 | `false` |
 
 ## 配置示例
 
@@ -62,7 +65,8 @@ picgo install picgo-plugin-s3-uploader
       "endpoint": "https://garage-api.example.com",
       "pathStyleAccess": true,
       "rejectUnauthorized": true,
-      "acl": "public-read"
+      "acl": "public-read",
+      "contentDispositionInline": true
     }
   }
 }
@@ -85,7 +89,8 @@ picgo install picgo-plugin-s3-uploader
       "endpoint": "https://minio.example.com",
       "pathStyleAccess": true,
       "rejectUnauthorized": true,
-      "acl": "public-read"
+      "acl": "public-read",
+      "contentDispositionInline": true
     }
   }
 }
@@ -107,11 +112,21 @@ picgo install picgo-plugin-s3-uploader
       "region": "us-east-1",
       "pathStyleAccess": false,
       "rejectUnauthorized": true,
-      "acl": "public-read"
+      "acl": "public-read",
+      "contentDispositionInline": true
     }
   }
 }
 ```
+
+## 预览与下载
+
+浏览器是“直接预览”还是“弹出下载”，主要取决于对象响应头：
+
+- `Content-Type` 是否正确，例如 `video/mp4`、`application/pdf`
+- `Content-Disposition` 是否被设置为 `attachment` 或 `inline`
+
+本插件默认不会强行写 `Content-Disposition`，而是优先依赖正确的 `Content-Type`。如果你希望浏览器更明确地按预览处理，可以开启 `contentDispositionInline`。
 
 ## 模板语法
 
@@ -234,7 +249,7 @@ s3://bucket/key
 
 ## 删除支持
 
-PicGo GUI 删除图片时，本插件会监听 `remove` 事件，并对当前插件上传的图片执行 S3 `DELETE Object`。
+PicGo GUI 删除文件时，本插件会监听 `remove` 事件，并对当前插件上传的对象执行 S3 `DELETE Object`。
 
 | 行为 | 说明 |
 | --- | --- |
@@ -275,4 +290,3 @@ PicGo GUI 删除图片时，本插件会监听 `remove` 事件，并对当前插
 ```text
 /rs:fit:300:300/plain/s3://public/img/Echo-idle-01.png
 ```
-

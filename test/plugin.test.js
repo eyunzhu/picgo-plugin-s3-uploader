@@ -39,6 +39,7 @@ function createUserConfig(overrides) {
     pathStyleAccess: true,
     rejectUnauthorized: true,
     acl: 'public-read',
+    contentDispositionInline: false,
     ...overrides
   }
 }
@@ -97,19 +98,24 @@ test('module entry exposes CommonJS and default-compatible exports', () => {
 
 test('plugin config schema can be created without getConfig host', () => {
   const pluginConfig = pluginFactory._test.createPluginConfig({})
+  const inlinePreviewField = pluginConfig.find((field) => field.name === 'contentDispositionInline')
 
   assert.equal(Array.isArray(pluginConfig), true)
-  assert.equal(pluginConfig.length, 10)
+  assert.equal(pluginConfig.length, 11)
+  assert.equal(Boolean(inlinePreviewField), true)
+  assert.equal(inlinePreviewField.type, 'confirm')
 })
 
 test('plugin config schema follows English host language', () => {
   const pluginConfig = pluginFactory._test.createPluginConfig({
     i18n: createI18n('en')
   })
+  const inlinePreviewField = pluginConfig.find((field) => field.name === 'contentDispositionInline')
 
   assert.equal(pluginConfig[2].alias, 'Bucket Name')
   assert.equal(pluginConfig[3].alias, 'Upload Path Template')
   assert.equal(pluginConfig[4].message, 'For example: https://cdn.example.com/{bucket}/{encodedKey}')
+  assert.equal(inlinePreviewField.alias, 'Inline Preview')
 })
 
 test('plugin config schema falls back to settings.language when i18n is unavailable', () => {
@@ -140,7 +146,19 @@ test('normalizeUserConfig merges defaults', () => {
 
   assert.equal(normalizedConfig.region, DEFAULT_USER_CONFIG.region)
   assert.equal(normalizedConfig.outputURLPattern, DEFAULT_USER_CONFIG.outputURLPattern)
+  assert.equal(
+    normalizedConfig.contentDispositionInline,
+    DEFAULT_USER_CONFIG.contentDispositionInline
+  )
   assert.equal(normalizedConfig.bucketName, 'public')
+})
+
+test('normalizeUserConfig accepts boolean-like contentDispositionInline values', () => {
+  const normalizedConfig = normalizeUserConfig({
+    contentDispositionInline: 'true'
+  })
+
+  assert.equal(normalizedConfig.contentDispositionInline, true)
 })
 
 test('renderTemplate supports slice and regex replacement', () => {
@@ -444,6 +462,28 @@ test('extractUploadPayload supports data URL base64 input', async () => {
   assert.equal(Buffer.isBuffer(payload.body), true)
 })
 
+test('extractUploadPayload guesses common file content types from file extension', async () => {
+  const videoPayload = await extractUploadPayload({
+    fileName: 'demo-video.mp4',
+    extname: '.mp4',
+    buffer: Buffer.from('not-a-real-mp4')
+  })
+  const htmlPayload = await extractUploadPayload({
+    fileName: 'index.html',
+    extname: '.html',
+    buffer: Buffer.from('<html></html>')
+  })
+  const archivePayload = await extractUploadPayload({
+    fileName: 'backup.zip',
+    extname: '.zip',
+    buffer: Buffer.from('not-a-real-zip')
+  })
+
+  assert.equal(videoPayload.contentType, 'video/mp4')
+  assert.equal(htmlPayload.contentType, 'text/html; charset=utf-8')
+  assert.equal(archivePayload.contentType, 'application/zip')
+})
+
 test('buildImgproxySource returns stable S3 source metadata', () => {
   assert.deepEqual(buildImgproxySource('public', 'img/Echo-idle-01.png'), {
     backend: 's3',
@@ -517,6 +557,7 @@ test('uploadObjectToS3 sends zero-dependency signed PUT request', async () => {
     )
     assert.equal(requests[0].options.headers.host, '127.0.0.1:9000')
     assert.equal(requests[0].options.headers['content-type'], 'image/png')
+    assert.equal(requests[0].options.headers['content-disposition'], undefined)
     assert.equal(requests[0].options.headers['x-amz-acl'], 'public-read')
     assert.equal(
       requests[0].options.headers['x-amz-content-sha256'],
@@ -528,6 +569,68 @@ test('uploadObjectToS3 sends zero-dependency signed PUT request', async () => {
     )
     assert.equal(requests[0].options.headers['content-encoding'], undefined)
     assert.deepEqual(requests[0].body, payload.body)
+  } finally {
+    http.request = originalHttpRequest
+  }
+})
+
+test('uploadObjectToS3 can force inline content disposition for browser preview', async () => {
+  const originalHttpRequest = http.request
+  const requests = []
+
+  try {
+    http.request = (requestOptions, callback) => {
+      const chunks = []
+      const request = new EventEmitter()
+
+      request.write = (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+      }
+
+      request.end = () => {
+        requests.push({
+          options: requestOptions,
+          body: Buffer.concat(chunks)
+        })
+
+        const response = new EventEmitter()
+        response.statusCode = 200
+        response.headers = {
+          etag: '"etag-inline"'
+        }
+
+        callback(response)
+
+        process.nextTick(() => {
+          response.emit('data', Buffer.from(''))
+          response.emit('end')
+        })
+      }
+
+      return request
+    }
+
+    await uploadObjectToS3({
+      userConfig: createUserConfig({
+        endpoint: 'http://127.0.0.1:9000',
+        outputURLPattern: '',
+        pathStyleAccess: true,
+        contentDispositionInline: true
+      }),
+      key: 'assets/demo-video.mp4',
+      payload: {
+        body: Buffer.from('hello-world'),
+        contentType: 'video/mp4',
+        contentEncoding: undefined
+      },
+      createDate() {
+        return new Date('2026-03-24T10:20:30.456Z')
+      }
+    })
+
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0].options.headers['content-disposition'], 'inline')
+    assert.match(requests[0].options.headers.authorization, /SignedHeaders=.*content-disposition/)
   } finally {
     http.request = originalHttpRequest
   }
